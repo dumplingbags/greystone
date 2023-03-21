@@ -105,6 +105,22 @@ async def get_loan_schedule(loan_id: int, db: Session = Depends(get_db)):
     return schedule
 
 
-@app.get("/loan_summary")
-async def get_loan_summary(loan_summary_request: LoanSummaryRequest, db: Session = Depends(get_db)):
-    raise HTTPException(status_code=404, detail="This API Endpoint has not been set up yet.")
+@app.get("/loan_summary/{loan_id}/{month}")
+async def get_loan_summary(loan_id: int, month: int, db: Session = Depends(get_db)):
+    loan = db.query(Loan).filter(Loan.id == loan_id).first()
+
+    if not loan:
+            raise HTTPException(status_code=400, detail="User with this ID does not exist")
+
+    loan_amount = loan.amount
+    i = loan.interest_rate
+    loan_term = loan.loan_term
+
+    monthly_payment = monthlyPayment(loan_amount, i, loan_term)
+    rem_balance = remainingBalance(loan_amount, i, monthly_payment, month)
+
+    resp = {}
+    resp["Current balance"] = round(rem_balance, 2)
+    resp["Principal paid"] = round(loan_amount - rem_balance, 2)
+    resp["Interest paid"] = round(monthly_payment*month + rem_balance - loan_amount, 2)
+    return resp
