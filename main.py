@@ -4,6 +4,7 @@ from models import User, Loan
 from database import SessionLocal, engine
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from helpers import monthlyPayment, remainingBalance
 
 app = FastAPI()
 
@@ -19,7 +20,7 @@ class LoanRequest(BaseModel):
     owner: str
 
 class LoanScheduleRequest(BaseModel):
-    loan_id: str
+    loan_id: int
 
 class LoanSummaryRequest(BaseModel):
     loan_id: str
@@ -62,20 +63,47 @@ async def create_user(loan_request: LoanRequest, db: Session = Depends(get_db)):
     loan = Loan(
         amount=loan_request.amount,
         interest_rate=loan_request.interest_rate,
-        loan_term=loan_request.interest_rate,
+        loan_term=loan_request.loan_term,
         owner=loan_request.owner)
 
     db.add(loan)
     db.commit()
 
+    l = db.query(Loan).filter(Loan.id == loan.id).first()
+    if not l:
+            raise HTTPException(status_code=400, detail="Loan has not been created")
+
     return {
         "code": "success",
-        "message": "loan  created"
+        "message": "loan created"
     }
 
-@app.get("/loan_schedule")
-async def get_loan_schedule(loan_schedule_request: LoanScheduleRequest, db: Session = Depends(get_db)):
-    raise HTTPException(status_code=404, detail="This API Endpoint has not been set up yet.")
+@app.get("/loan_schedule/{loan_id}")
+async def get_loan_schedule(loan_id: int, db: Session = Depends(get_db)):
+
+    loan = db.query(Loan).filter(Loan.id == loan_id).first()
+
+    if not loan:
+            raise HTTPException(status_code=400, detail="User with this ID does not exist")
+
+    loan_amount = loan.amount
+    i = loan.interest_rate
+    loan_term = loan.loan_term
+
+    schedule = []
+
+    monthly_payment = monthlyPayment(loan_amount, i, loan_term)
+
+    for month in range(1, loan_term+1):
+        rem_balance = remainingBalance(loan_amount, i, monthly_payment, month)
+        data = {}
+        data["Month"] = month
+        data["Remaining balance"] = round(rem_balance, 2)
+        data["Monthly payment"] = round(monthly_payment, 2)
+        schedule.append(data)
+
+    return schedule
+
 
 @app.get("/loan_summary")
 async def get_loan_summary(loan_summary_request: LoanSummaryRequest, db: Session = Depends(get_db)):
